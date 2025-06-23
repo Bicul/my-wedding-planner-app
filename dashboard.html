@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wedding Planner Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h2 id="welcomeMessage"></h2>
+        <button id="logoutButton">Logout</button>
+
+        <nav>
+            <ul>
+                <li><a href="#" data-module="Budget">Budget</a></li>
+                <li><a href="#" data-module="Guests">Guests</a></li>
+                <li><a href="#" data-module="Seserahan">Seserahan</a></li>
+                <li><a href="#" data-module="Catering">Catering</a></li>
+            </ul>
+        </nav>
+
+        <div id="moduleContent">
+            <p>Select a module from the navigation above to view its data.</p>
+        </div>
+    </div>
+
+    <script>
+        // PASTIKAN URL APPS SCRIPT WEB APP ANDA DI SINI
+        const APPS_SCRIPT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbybErfGs6sIVfTEELd9YzUdaeCt5ehY5bGEGVET0884upJ2RHoIChsODZdocVgglk8oAQ/exec';
+
+        const userId = localStorage.getItem('userId');
+        const welcomeMessage = document.getElementById('welcomeMessage');
+        const moduleContent = document.getElementById('moduleContent');
+        const logoutButton = document.getElementById('logoutButton');
+        const navLinks = document.querySelectorAll('nav ul li a');
+
+        // --- Cek Status Login ---
+        if (!userId) {
+            window.location.href = 'index.html'; // Redirect ke login jika belum login
+        } else {
+            welcomeMessage.textContent = `Welcome to your Dashboard, ${userId}!`;
+        }
+
+        // --- Event Listener Logout ---
+        logoutButton.addEventListener('click', function() {
+            localStorage.removeItem('userId');
+            window.location.href = 'index.html'; // Redirect ke login
+        });
+
+        // --- Event Listener Navigasi Modul ---
+        navLinks.forEach(link => {
+            link.addEventListener('click', function(event) {
+                event.preventDefault();
+                const moduleName = this.dataset.module;
+                loadModuleContent(moduleName);
+            });
+        });
+
+        // --- Fungsi Utama untuk Memuat Konten Modul ---
+        async function loadModuleContent(moduleName) {
+            moduleContent.innerHTML = `<h3>Loading ${moduleName} data...</h3>`; // Pesan loading
+            try {
+                const response = await axios.get(`${APPS_SCRIPT_WEB_APP_URL}?action=getData&sheet=${moduleName}&userId=${userId}`);
+                if (response.data.success) {
+                    renderModule(moduleName, response.data.data); // Panggil fungsi render spesifik modul
+                } else {
+                    moduleContent.innerHTML = `<p style="color: red;">Error loading ${moduleName}: ${response.data.message}</p>`;
+                }
+            } catch (error) {
+                console.error(`Error fetching ${moduleName} data:`, error);
+                moduleContent.innerHTML = `<p style="color: red;">Network error loading ${moduleName}.</p>`;
+            }
+        }
+
+        // --- Fungsi untuk Merender Data & Form Modul Spesifik ---
+        function renderModule(sheetName, data) {
+            let html = `<h3>${sheetName} Data</h3>`;
+
+            if (data.length === 0) {
+                html += '<p>No data available for this module. Please add some.</p>';
+            } else {
+                // Table Data
+                html += '<table border="1">';
+                // Table Headers
+                html += '<thead><tr>';
+                const headers = Object.keys(data[0]);
+                headers.forEach(header => {
+                    html += `<th>${header}</th>`;
+                });
+                html += '</tr></thead>';
+                // Table Body
+                html += '<tbody>';
+                data.forEach(row => {
+                    html += '<tr>';
+                    headers.forEach(header => {
+                        html += `<td>${row[header]}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+
+                // --- Kalkulasi Spesifik Modul ---
+                if (sheetName === 'Budget') {
+                    const totalBudget = data.reduce((sum, item) => sum + parseFloat(item['Total Budget'] || 0), 0);
+                    const totalPaid = data.reduce((sum, item) => sum + parseFloat(item['Total Paid'] || 0), 0);
+                    const remainingBudget = totalBudget - totalPaid;
+                    html += `<p><strong>Total Budget:</strong> Rp ${totalBudget.toLocaleString('id-ID')}</p>`;
+                    html += `<p><strong>Total Paid:</strong> Rp ${totalPaid.toLocaleString('id-ID')}</p>`;
+                    html += `<p><strong>Remaining Budget:</strong> Rp ${remainingBudget.toLocaleString('id-ID')}</p>`;
+                } else if (sheetName === 'Guests') {
+                    const confirmedGuests = data.filter(guest => guest['Confirmation'] === 'Yes').length;
+                    const totalGuests = data.length;
+                    html += `<p><strong>Total Guests Invited:</strong> ${totalGuests}</p>`;
+                    html += `<p><strong>Confirmed Guests:</strong> ${confirmedGuests}</p>`;
+                } else if (sheetName === 'Catering') {
+                    const totalPorsi = data.reduce((sum, item) => sum + parseFloat(item['Portion'] || 0), 0);
+                    const totalBiayaCatering = data.reduce((sum, item) => sum + (parseFloat(item['Portion'] || 0) * parseFloat(item['PricePerPortion'] || 0)), 0);
+                    html += `<p><strong>Total Estimated Portions:</strong> ${totalPorsi}</p>`;
+                    html += `<p><strong>Total Estimated Catering Cost:</strong> Rp ${totalBiayaCatering.toLocaleString('id-ID')}</p>`;
+                }
+            }
+            
+            // --- Formulir Tambah Data ---
+            html += `<h4>Add New ${sheetName} Entry</h4>`;
+            html += `<form id="add${sheetName}Form">`;
+            
+            // Definisikan kolom-kolom yang ingin diinput secara manual untuk setiap sheet
+            const formFields = {
+                'Budget': [
+                    { name: 'Vendor', type: 'text' },
+                    { name: 'Category', type: 'text' },
+                    { name: 'Total Budget', type: 'number' },
+                    { name: 'Total Paid', type: 'number' }
+                ],
+                'Guests': [
+                    { name: 'ID', type: 'text' }, // ID ini sebaiknya di-generate otomatis di Apps Script
+                    { name: 'Name', type: 'text' },
+                    { name: 'Count', type: 'number' },
+                    { name: 'Address', type: 'text' },
+                    { name: 'Phone', type: 'text' },
+                    { name: 'Confirmation', type: 'select', options: ['Yes', 'No', 'Pending'] }
+                ],
+                'Seserahan': [
+                    { name: 'ID', type: 'text' }, // ID ini sebaiknya di-generate otomatis di Apps Script
+                    { name: 'Name', type: 'text' },
+                    { name: 'Status', type: 'select', options: ['Purchased', 'Pending', 'Received'] },
+                    { name: 'Price', type: 'number' },
+                    { name: 'Location', type: 'text' }
+                ],
+                'Catering': [
+                    { name: 'MealType', type: 'text' },
+                    { name: 'Portion', type: 'number' },
+                    { name: 'PricePerPortion', type: 'number' }
+                ]
+            };
+
+            const fields = formFields[sheetName];
+            if (fields) {
+                fields.forEach(field => {
+                    html += `<div class="form-group">`;
+                    html += `<label for="add-${sheetName}-${field.name}">${field.name}:</label>`;
+                    if (field.type === 'select') {
+                        html += `<select id="add-${sheetName}-${field.name}" name="${field.name}" ${field.required ? 'required' : ''}>`;
+                        field.options.forEach(option => {
+                            html += `<option value="${option}">${option}</option>`;
+                        });
+                        html += `</select>`;
+                    } else {
+                        html += `<input type="${field.type}" id="add-${sheetName}-${field.name}" name="${field.name}" ${field.required ? 'required' : ''}>`;
+                    }
+                    html += `</div>`;
+                });
+            } else {
+                html += '<p>Form fields not defined for this module.</p>';
+            }
+
+            html += `<button type="submit">Add ${sheetName}</button>`;
+            html += `<p id="add${sheetName}Message" style="margin-top: 10px;"></p>`;
+            html += `</form>`;
+
+            moduleContent.innerHTML = html;
+
+            // --- Event Listener untuk Formulir Tambah Data ---
+            const addForm = document.getElementById(`add${sheetName}Form`);
+            if (addForm) {
+                addForm.addEventListener('submit', async function(event) {
+                    event.preventDefault();
+                    const formData = {};
+                    // Kumpulkan data dari input form
+                    fields.forEach(field => {
+                        const inputElement = document.getElementById(`add-${sheetName}-${field.name}`);
+                        if (inputElement) {
+                             // Konversi ke number jika tipenya number
+                            formData[field.name] = (field.type === 'number') ? parseFloat(inputElement.value) : inputElement.value;
+                        }
+                    });
+
+                    const addMessageElement = document.getElementById(`add${sheetName}Message`);
+                    addMessageElement.textContent = 'Adding data...';
+                    addMessageElement.style.color = 'black';
+
+                    try {
+                        const result = await axios.post(`${APPS_SCRIPT_WEB_APP_URL}?action=addData`, {
+                            sheet: sheetName,
+                            userId: userId,
+                            data: formData
+                        });
+
+                        if (result.data.success) {
+                            addMessageElement.textContent = 'Data added successfully!';
+                            addMessageElement.style.color = 'green';
+                            // Kosongkan form setelah sukses
+                            addForm.reset();
+                            // Refresh data setelah penambahan
+                            loadModuleContent(sheetName);
+                        } else {
+                            addMessageElement.textContent = `Error: ${result.data.message}`;
+                            addMessageElement.style.color = 'red';
+                        }
+                    } catch (error) {
+                        console.error('Error adding data:', error);
+                        addMessageElement.textContent = 'Network error during data addition.';
+                        addMessageElement.style.color = 'red';
+                    }
+                });
+            }
+        }
+
+        // Opsional: Muat modul Budget secara default saat dashboard pertama kali dibuka
+        document.addEventListener('DOMContentLoaded', () => {
+            if (userId) {
+                loadModuleContent('Budget');
+            }
+        });
+
+    </script>
+</body>
+</html>
